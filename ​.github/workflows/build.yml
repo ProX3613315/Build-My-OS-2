@@ -1,0 +1,45 @@
+name: Build Custom OS ISO
+
+on:
+  workflow_dispatch: 
+
+jobs:
+  build_iso:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 準備環境
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y live-build curl debootstrap squashfs-tools
+          
+      - name: 執行 ISO 建置
+        run: |
+          sudo mkdir -p /opt/custom_iso_builder
+          cd /opt/custom_iso_builder
+          sudo lb clean
+          
+          sudo lb config --distribution bookworm --architecture amd64 --archive-areas "main contrib non-free non-free-firmware" --binary-images iso-hybrid --bootappend-live "boot=live components quiet splash net.ifnames=0" --iso-application "Custom_OS" --iso-volume "SECURE_OS"
+          
+          sudo mkdir -p config/package-lists
+          sudo bash -c 'cat <<EOF > config/package-lists/custom.list.chroot
+          lxde-core openbox lightdm falkon torbrowser-launcher macchanger ufw apparmor secure-delete wine wine32 wine64 winetricks curl wget htop net-tools pulseaudio x11-xserver-utils
+          EOF'
+          
+          sudo mkdir -p config/hooks/normal
+          sudo bash -c 'cat <<'"'"'EOF'"'"' > config/hooks/normal/01-setup.hook.chroot
+          #!/bin/sh
+          apt-get update && apt-get install -y curl ca-certificates
+          curl -s https://repo.waydro.id | bash
+          apt-get install -y waydroid
+          apt-get clean && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+          EOF'
+          sudo chmod +x config/hooks/normal/01-setup.hook.chroot
+          
+          sudo lb build
+
+      - name: 上傳成品 ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: Custom-OS-ISO
+          path: /opt/custom_iso_builder/*.iso
